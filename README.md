@@ -1,11 +1,12 @@
 
 ## PHP Start
 
-### Descrição
+### 1. Descrição
 
-MicroFramework interno para criação de projetos em PHP
+Microframework interno para criação de projetos em PHP
+Considerações sobre [MVC Model 2 e ADR](https://github.com/pmjones/adr).
 
-### 1. Estrutura
+### 2. Estrutura
 
 ```
 1── .docker: contém arquivos para configuração e manipulação de serviços do docker
@@ -62,7 +63,6 @@ version: '3.1'
 services:
     mysql:
         image: mysql:5.7.22
-        container_name: phpstartapi-mysql
         environment:
             - MYSQL_DATABASE=
             - MYSQL_USER=
@@ -77,13 +77,11 @@ services:
 
     beanstalk:
         image: schickling/beanstalkd
-        container_name: phpstartapi-beanstalk
         ports:
             - 21300:11300
 
     php-apache:
         image: marciodojr/phpstart-apache-docker-image:dev
-        container_name: phpstartapi
         environment:
             - DEV_MODE=1
             - DB_HOST=
@@ -125,13 +123,12 @@ PSR's (desde 2011):
 | 16  | [Simple Cache](https://www.php-fig.org/psr/psr-16/)       | 𐄂 não utilizado                | 𐄂         |
 |     |                                                           |                                |           |
 
-### Exemplo de rotina
+### 3. Exemplo de rotina
 
 
 1. Setup
 ```sh
 # em docker-compose.yml
-# redefinir nomes dos containers
 # definir nomes de variaveis de ambiente dos containers
 # no terminal
 docker-compose up
@@ -240,13 +237,18 @@ $dependencies[MyController::class] = function($c) {
 };
 ```
 
-5. Repetir o processo de criação da classe, e registro no container para cada próxima camada.
+5. Repetir criação da classe e registro no container para cada próxima camada.
+
+### 4. Comparativos
+
+
+0. Informações Gerais
 
 ![Phpstart Stack](/imgs/phpstart-stack.png)
+![Slim Stack](/imgs/slim-stack.png)
+![Slim Middlewares](/imgs/middleware.png)
 
-### Comparativos
 
-0. Estrutura de diretórios
 
 **PhpStart** = **Slim** (ver [slimskeleton](https://github.com/slimphp/Slim-Skeleton))
 
@@ -320,3 +322,366 @@ require './config/routes.php';
 
 $app->run();
 ```
+
+2. Routes:
+
+**PhpStart**
+```php
+// config/routes.php
+
+return [
+    [
+        'pattern' => '/user/login',
+        'callback' => Controller\LoginController::class . ':login',
+    ],
+    [
+        'pattern' => '/virtual-users',
+        'middlewares' => [
+            Middleware\Auth::class,
+        ],
+        'callback' => Controller\VirtualUserController::class . ':listAll',
+    ],
+    [
+        'pattern' => '/virtual-users/add',
+        'middlewares' => [
+            Middleware\Auth::class,
+        ],
+        'callback' => Controller\VirtualUserController::class . ':create',
+    ],
+    [
+        'pattern' => '/virtual-users/remove',
+        'middlewares' => [
+            Middleware\Auth::class,
+        ],
+        'callback' => Controller\VirtualUserController::class . ':delete',
+    ],
+    [
+        'pattern' => '/virtual-domains',
+        'middlewares' => [
+            Middleware\Auth::class,
+        ],
+        'callback' => Controller\DomainController::class . ':listAll',
+    ],
+    [
+        'pattern' => '/virtual-domains/add',
+        'middlewares' => [
+            Middleware\Auth::class,
+        ],
+        'callback' => Controller\DomainController::class . ':create',
+    ],
+    [
+        'pattern' => '/virtual-domains/edit',
+        'middlewares' => [
+            Middleware\Auth::class,
+        ],
+        'callback' => Controller\DomainController::class . ':update',
+    ],
+    [
+        'pattern' => '/virtual-domains/remove',
+        'middlewares' => [
+            Middleware\Auth::class,
+        ],
+        'callback' => Controller\DomainController::class . ':delete',
+    ],
+    [
+        'pattern' => '/virtual-aliases',
+        'middlewares' => [
+            Middleware\Auth::class,
+        ],
+        'callback' => Controller\VirtualAliasController::class . ':listAll',
+    ],
+    [
+        'pattern' => '/virtual-aliases/add',
+        'middlewares' => [
+            Middleware\Auth::class,
+        ],
+        'callback' => Controller\VirtualAliasController::class . ':create',
+    ],
+    [
+        'pattern' => '/virtual-aliases/remove',
+        'middlewares' => [
+            Middleware\Auth::class,
+        ],
+        'callback' => Controller\VirtualAliasController::class . ':delete',
+    ]
+];
+```
+
+**Slim**
+
+```php
+// config/routes.php
+
+$app->post('/user/login', LoginController::class . ':login');
+
+$app->group('', function(){
+    // crud domínios
+    $this->group('/virtual-domains', function () {
+        $this->get('', DomainController::class . ':listAll');
+        $this->post('', DomainController::class . ':create');
+        $this->patch('/{id:[0-9]+}', DomainController::class . ':update');
+        $this->delete('', DomainController::class . ':delete');
+    });
+
+    // crud emails
+    $this->group('/virtual-users', function() {
+        $this->get('', VirtualUserController::class . ':listAll');
+        $this->post('', VirtualUserController::class . ':create');
+        $this->delete('', VirtualUserController::class . ':delete');
+    });
+
+    // crud aliases
+    $this->group('/virtual-aliases', function(){
+        $this->get('', VirtualAliasController::class . ':listAll');
+        $this->post('', VirtualAliasController::class . ':create');
+        $this->delete('', VirtualAliasController::class . ':delete');
+    });
+})->add(Auth::class . ':process');
+
+```
+
+3. Middlewares
+
+**PhpStart**
+```php
+<?php
+
+namespace IntecPhp\Middleware;
+
+use IntecPhp\Model\Account;
+use IntecPhp\Model\ResponseHandler;
+
+class AuthenticationMiddleware
+{
+    private $account;
+
+    public function __construct(Account $account)
+    {
+        $this->account = $account;
+    }
+
+    public function isAuthenticated($request)
+    {
+        if (!$this->account->isLoggedIn()) {
+            $rp = new ResponseHandler(403, 'Você não tem permissão para acessar este recurso');
+            $rp->printJson();
+            exit;
+        }
+    }
+}
+```
+
+**Slim**
+
+```php
+<?php
+
+namespace Mdojr\EmailProvider\Middleware;
+
+use Mdojr\EmailProvider\Service\Account;
+
+class Auth
+{
+    use \Mdojr\EmailProvider\Helper\JsonResponse;
+
+    private $account;
+
+    public function __construct(Account $account)
+    {
+        $this->account = $account;
+    }
+
+    public function process($request, $response, $next)
+    {
+        $header = $request->getHeader('Authorization');
+        $token = $header ? $this->getToken($header[0]) : null;
+        if (!$token || !$this->account->get($token)) {
+            return $this->toJson(
+                $response,
+                403,
+                'Você não possui permissão para acessar este recurso'
+            );
+        }
+        $req = $request->withAttribute('token', $token);
+        return $next($req, $response);
+    }
+
+    private function getToken($header)
+    {
+        if(preg_match("/Bearer\s(\S+)/", $header, $matches)) {
+            return $matches[1];
+        }
+        return null;
+    }
+}
+```
+
+4. Controllers
+
+**PhpStart**
+```php
+<?php
+
+namespace Mdojr\EmailProvider\Controller;
+
+use Mdojr\EmailProvider\Service\Database\VirtualDomain;
+use Mdojr\EmailProvider\Model\ResponseHandler;
+use Exception;
+
+class DomainController
+{
+    private $vdomain;
+
+    public function __construct(VirtualDomain $vdomain)
+    {
+        $this->vdomain = $vdomain;
+    }
+
+    // GET /virtual-domains
+    public function listAll()
+    {
+        try {
+            $vdomainData = $this->vdomain->fetchAll();
+            $rp = new ResponseHandler(200, 'ok', $vdomainData);
+        } catch(Exception $ex) {
+            $rp = new ResponseHandler(400, $ex->getMessage());
+        }
+        $rp->printJson();
+    }
+
+    // POST /virtual-domains/add
+    public function create($request)
+    {
+        $params = $request->getPostParams();
+        try {
+            $domain = $this->vdomain->create($params['name']);
+            $rp = new ResponseHandler(200, 'ok', $domain);
+        } catch(Exception $ex) {
+            $rp = new ResponseHandler(400, $ex->getMessage());
+        }
+        $rp->printJson();
+    }
+
+    // POST /virtual-domains/edit
+    public function update($request)
+    {
+        $params = $request->getPostParams();
+        try {
+            $domain = $this->vdomain->update($params['id'], $params['name']);
+            $rp = new ResponseHandler(200, 'ok', $domain);
+        } catch(Exception $ex) {
+            $rp = new ResponseHandler(400, $ex->getMessage());
+        }
+        $rp->printJson();
+    }
+
+    // POST /virtual-domains/remove
+    public function delete($request)
+    {
+        $params = $request->getPostParams();
+        try {
+            $this->vdomain->delete($params['id']);
+            $rp = new ResponseHandler(200);
+        } catch(Exception $ex) {
+            $rp = new ResponseHandler(400, $ex->getMessage());
+        }
+        $rp->printJson();
+    }
+}
+```
+
+**Slim**
+
+```php
+<?php
+
+namespace Mdojr\EmailProvider\Controller;
+
+use Mdojr\EmailProvider\Service\Database\VirtualDomain;
+use Exception;
+
+class DomainController
+{
+    use \Mdojr\EmailProvider\Helper\JsonResponse;
+
+    private $vdomain;
+
+
+    public function __construct(VirtualDomain $vdomain)
+    {
+        $this->vdomain = $vdomain;
+    }
+
+    // GET /virtual-domains
+    public function listAll($request, $response)
+    {
+        try {
+            $vdomainData = $this->vdomain->fetchAll();
+            return $this->toJson($response, 200, 'ok', $vdomainData);
+        } catch(Exception $ex) {
+            return $this->toJson($response, 400, $ex->getMessage());
+        }
+    }
+
+    // POST /virtual-domains
+    public function create($request, $response)
+    {
+        $params = $request->getParams();
+        try {
+            if(empty($params['name'])) {
+                throw new Exception('Domínio não informado');
+            }
+            $domain = $this->vdomain->create($params['name']);
+            return $this->toJson($response, 200, 'ok', $domain);
+        } catch(Exception $ex) {
+            return $this->toJson($response, 400, $ex->getMessage());
+        }
+    }
+
+    // PATCH /virtual-domains
+    public function update($request, $response, $args)
+    {
+        $params = $request->getParams();
+        try {
+            if(empty($params['name'])) {
+                throw new Exception('Domínio não informado');
+            }
+            $domain = $this->vdomain->update($args['id'], $params['name']);
+            return $this->toJson($response, 200, 'ok', $domain);
+        } catch(Exception $ex) {
+            return $this->toJson($response, 400, $ex->getMessage());
+        }
+    }
+
+    // DELETE /virtual-domains
+    public function delete($request, $response)
+    {
+        $params = $request->getParams();
+        try {
+            if(empty($params['domains'])) {
+                throw new Exception('Nenhum domínio foi informado');
+            }
+            $this->vdomain->delete($params['domains']);
+            return $this->toJson($response, 204);
+        } catch(Exception $ex) {
+            return $this->toJson($response, 400, $ex->getMessage());
+        }
+    }
+}
+```
+
+5. Frontend
+
+As respostas do servidor de api são idênticas tanto para o PhpStart quanto para o Slim e seguem o formato conhecido:
+
+```json
+{
+    code: <http-status-code>,
+    message: <reason>,
+    data: <array>
+}
+```
+
+Links Importantes:
+
+Documentação do Slim Framework: https://www.slimframework.com/docs/
