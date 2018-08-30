@@ -762,8 +762,10 @@ Ex.: max_file_size post_max_size, max_file_upload, ...
 │   ├── fonts: contém fontes específicas que não podem ser adicionadas via npm
 │   ├── {img,js,sass}
 
-5── public:
+6── public:
 │   ├── {fonts,img,js,css}
+
+
 ├── {README.md,.babelrc,dockerignore,.editorconfig,.gitignore}
 ├── {composer.json,docker-compose.yml,gruntfile.js,package.json}
 ```
@@ -778,22 +780,20 @@ version: '3.1'
 services:
     node:
         image: node:10.6.0-alpine
-        container_name: phpstartwa-node
         environment:
             - SERVERNAME=webserver
         volumes:
             - .:/srv/vhosts/phpApp
         working_dir: /srv/vhosts/phpApp
-        command: /bin/sh -c "npm install grunt-cli && npm install && npm run dev"
+        command: /bin/sh -c "npm install && npm run dev"
         ports:
             - 3000:3000
             - 3001:3001
         depends_on:
             - webserver
 
-    php-fpm:
+    webserver:
         image: marciodojr/phpstart-apache-docker-image:dev
-        container_name: phpstartwa
         environment:
             - APP_SECRET=holly_molly!
         working_dir: /srv/vhosts/phpApp
@@ -803,4 +803,106 @@ services:
             - ./.docker/apache/vhost.conf:/etc/apache2/sites-available/000-default.conf
         ports:
             - 2999:80
+```
+
+1. Requisições:
+
+```js
+new Vue({
+    el: "#exampleApp",
+    data: {
+        posts: []
+    },
+    components: {
+        "blog-post": BlogPostComponent
+    },
+    created() {
+        // vue lifecycle hook
+        API.get("/exemplo1").done(res => {
+            switch (res.code) {
+                case 200:
+                    this.posts = res.data.posts;
+                    break;
+                default:
+                    throw "Codigo não esperado! " + res.code;
+            }
+        });
+
+        /*
+        preferencialmente
+        API.get("/exemplo1"[,data]).then(fnSuccess, fnFail);
+        */
+    }
+});
+```
+
+2. Json Mapper
+
+```php
+<?php
+// app/config/json-mapper.json
+return [
+    '/exemplo1' => 'exemplo1.json',
+    '/exemplo2' => 'exemplo2.json',
+    '/prova' => 'prova.json'
+];
+```
+
+3. Json (app/config/json/exemplo1.json)
+```json
+{
+    "code": 200,
+    "message": "success",
+    "data": {
+        "posts": [
+            {
+                "id": 1,
+                "title": "Vantagens de solicitar um Financiamento",
+                "text": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nunc ullamcorper, neque at tristique.",
+                "img": "https://picsum.photos/128/80"
+            },
+            {
+                "id": 2,
+                "title": "Vantagens de solicitar um Financiamento",
+                "text": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nunc ullamcorper, neque at tristique.",
+                "img": "https://picsum.photos/128/80"
+            },
+            {
+                "id": 3,
+                "title": "Vantagens de solicitar um Financiamento",
+                "text": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nunc ullamcorper, neque at tristique.",
+                "img": "https://picsum.photos/128/80"
+            },
+            {
+                "id": 4,
+                "title": "Vantagens de solicitar um Financiamento",
+                "text": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nunc ullamcorper, neque at tristique.",
+                "img": "https://picsum.photos/128/80"
+            }
+        ]
+    }
+}
+```
+
+4. Environment
+```js
+// reinicie o docker ou grunt dev caso após alterar o valor desse arquivo
+// o valor inicial '' deve ser utilizado para desenvolvimento isolado do frontend
+// o valor 'http://localhost:8888' deve ser utilizado para desenvolvimento integrado com
+// backend local.
+const environment = {
+    apiUrl: ''
+    /*
+        Exemplos:
+        - 'https://api.mova.vc' (produção),
+        - 'https://dev.api.mova.vc' (dev online),
+        - 'http://localhost:8888' (local dev),
+        - 'http://localhost:3000' (local dev front, mesmo que '')
+    */
+};
+
+export {
+    environment
+};
+
 ```
