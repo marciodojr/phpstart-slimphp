@@ -3,7 +3,8 @@
 
 ### 1. Descrição
 
-Microframework interno para criação de projetos em PHP
+Microframework interno para criação de projetos em PHP: [phpstartApiServer](https://github.com/incluirtecnologia/phpstartApiServer)
+
 Considerações sobre [MVC Model 2 e ADR](https://github.com/pmjones/adr).
 
 ### 2. Estrutura
@@ -60,6 +61,7 @@ Ex.: max_file_size post_max_size, max_file_upload, ...
 
 ```yml
 version: '3.1'
+
 services:
     mysql:
         image: mysql:5.7.22
@@ -494,15 +496,12 @@ class Auth
     public function process($request, $response, $next)
     {
         $header = $request->getHeader('Authorization');
-        $token = $header ? $this->getToken($header[0]) : null;
-        if (!$token || !$this->account->get($token)) {
-            return $this->toJson(
-                $response,
-                403,
-                'Você não possui permissão para acessar este recurso'
-            );
+        $token = $header ? $this->getToken($header[0]) : '';
+        $data = $this->account->get($token);
+        if (!$token || !$data) {
+            return $this->toJson($response, 403, 'Você não possui permissão para acessar este recurso');
         }
-        $req = $request->withAttribute('token', $token);
+        $req = $request->withAttribute('auth', (array)$data);
         return $next($req, $response);
     }
 
@@ -682,6 +681,126 @@ As respostas do servidor de api são idênticas tanto para o PhpStart quanto par
 }
 ```
 
+6. Testes Funcionais (Slim)
+
+```php
+    public function testListDomainWithoutToken()
+    {
+        $response = $this->runApp('GET', '/virtual-domains');
+        $this->check403Response($response);
+    }
+```
+
+```php
+    protected function runApp($requestMethod, $requestUri, $requestData = null, $token = null)
+    {
+        $environment = Environment::mock(
+            [
+                'REQUEST_METHOD' => $requestMethod,
+                'REQUEST_URI' => $requestUri
+            ]
+        );
+        $request = Request::createFromEnvironment($environment);
+        if (isset($requestData)) {
+            $request = $request->withParsedBody($requestData);
+        }
+        if($token) {
+            $request = $request->withHeader('Authorization', sprintf('Bearer %s', $token));
+        }
+
+        return $this->app->process($request, new Response());
+    }
+```
+```php
+    protected function check403Response(Response $response)
+    {
+        $body = $this->decodeResponse($response);
+        $this->assertSame(403, $response->getStatusCode());
+        $this->assertSame(403, $body['code']);
+        $this->assertSame('Você não possui permissão para acessar este recurso', $body['message']);
+        $this->assertSame([], $body['data']);
+    }
+```
+
 Links Importantes:
 
 Documentação do Slim Framework: https://www.slimframework.com/docs/
+
+## Frontend
+
+Microframework interno para construção de frontends em html, css e js.
+
+[PhpStartWebApp](https://github.com/incluirtecnologia/phpstartwebapp)
+
+
+0. Estrutura
+
+```
+1── .docker: contém arquivos para configuração e manipulação de serviços do docker
+│   ├── apache
+│   │   ├── vhost.conf: arquivo de definição do virtual host para apache
+│   ├── nginx
+│   │   ├── nginx.conf: equivalente do vhost.conf para nginx
+│   ├── php
+│   │   ├── php-ini-overrides.ini: arquivo para definição de parâmetros do php.
+Ex.: max_file_size post_max_size, max_file_upload, ...
+
+2── app
+│   ├── config:
+│   │   ├── json: arquivos json para simulação de retorno do backend
+│   │   json-mapper.php: array de mapeamento de rotas para json's
+│   │   template-routes.php: rotas de páginas da aplicação
+
+3── src: Código Psr4
+│   ├── {Middleware, Service, View}
+
+4── views:
+│   ├── partial: contém arquivos html parciais (layout, sidebar, ...)
+│   ├── template contém o conteúdo central de cada página
+
+5── assets:
+│   ├── fonts: contém fontes específicas que não podem ser adicionadas via npm
+│   ├── {img,js,sass}
+
+5── public:
+│   ├── {fonts,img,js,css}
+├── {README.md,.babelrc,dockerignore,.editorconfig,.gitignore}
+├── {composer.json,docker-compose.yml,gruntfile.js,package.json}
+```
+
+**Observação 1:** As pastas referentes ao _backend_ deixaram de existir (.docker/mysql, app/src/Controller, ...).
+
+**Observação 2:** O arquivo docker-compose.yml foi simplificado.
+
+```yml
+version: '3.1'
+
+services:
+    node:
+        image: node:10.6.0-alpine
+        container_name: phpstartwa-node
+        environment:
+            - SERVERNAME=webserver
+        volumes:
+            - .:/srv/vhosts/phpApp
+        working_dir: /srv/vhosts/phpApp
+        command: /bin/sh -c "npm install grunt-cli && npm install && npm run dev"
+        ports:
+            - 3000:3000
+            - 3001:3001
+        depends_on:
+            - webserver
+
+    php-fpm:
+        image: marciodojr/phpstart-apache-docker-image:dev
+        container_name: phpstartwa
+        environment:
+            - APP_SECRET=holly_molly!
+        working_dir: /srv/vhosts/phpApp
+        volumes:
+            - .:/srv/vhosts/phpApp
+            - ./.docker/php/php-ini-overrides.ini:/etc/php/7.2/apache2/conf.d/99-overrides.ini
+            - ./.docker/apache/vhost.conf:/etc/apache2/sites-available/000-default.conf
+        ports:
+            - 2999:80
+```
